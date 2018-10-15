@@ -558,10 +558,11 @@ t_traversal::get_flattened_tree(t_tvidx idx, t_depth stop_depth) const {
             rnode.m_nchild = nchild;
             rnode.m_depth = c_node.m_depth;
             t_tvidx curr_cidx = hidx + 1;
-            t_tvivec children(nchild);
+            //t_tvivec children(nchild);
             for (int cidx = 0; cidx < nchild; cidx++) {
                 const t_tvnode& child_node = (*m_nodes)[curr_cidx];
-                children[cidx] = curr_cidx;
+                queue.push(curr_cidx);
+                //children[cidx] = curr_cidx;
                 if (child_node.m_expanded) {
                     curr_cidx = curr_cidx + child_node.m_ndesc + 1;
                 } else {
@@ -569,13 +570,13 @@ t_traversal::get_flattened_tree(t_tvidx idx, t_depth stop_depth) const {
                 }
                 rvec_idx++;
             }
-            for (t_index cidx = 0, loop_end = children.size(); cidx < loop_end; ++cidx) {
+            /*for (t_index cidx = 0, loop_end = children.size(); cidx < loop_end; ++cidx) {
                 queue.push(children[cidx]);
-            }
+            }*/
         } else {
-            rnode.m_fcidx = 0;
+            rnode.m_fcidx = INVALID_INDEX;
             rnode.m_nchild = 0;
-            rnode.m_depth = INVALID_INDEX;
+            rnode.m_depth = curdepth;
         }
         rvec.push_back(rnode);
     }

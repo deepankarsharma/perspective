@@ -37,6 +37,7 @@ public:
     t_aggspecvec get_aggregates() const;
     t_tscalvec get_row_path(t_tvidx idx) const;
     void set_depth(t_depth depth);
+    t_depth get_depth() const;
 
     t_minmax get_agg_min_max(t_uindex aggidx, t_depth depth) const;
 
@@ -45,6 +46,12 @@ public:
     t_depth get_trav_depth(t_tvidx idx) const;
 
     using t_ctxbase<t_ctx1>::get_data;
+
+    t_uindex get_leaf_count() const;
+    t_tscalvec get_leaf_data(t_uindex start_row,
+                             t_uindex end_row,
+                             t_uindex start_col,
+                             t_uindex end_col) const;
 
 private:
     t_trav_sptr m_traversal;

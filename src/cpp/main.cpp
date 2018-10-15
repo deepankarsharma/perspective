@@ -588,15 +588,15 @@ make_table(t_uint32 size, val j_colnames, val j_dtypes, val j_data, t_uint32 off
         // If user doesn't specify an column to use as the pkey index, just use
         // row number
         auto key_col = tbl->add_column("psp_pkey", DTYPE_INT32, true);
-        auto okey_col = tbl->add_column("psp_okey", DTYPE_INT32, true);
+        //auto okey_col = tbl->add_column("psp_okey", DTYPE_INT32, true);
 
         for (auto ridx = 0; ridx < tbl->size(); ++ridx) {
             key_col->set_nth<t_int32>(ridx, (ridx + offset) % limit);
-            okey_col->set_nth<t_int32>(ridx, (ridx + offset) % limit);
+        //    okey_col->set_nth<t_int32>(ridx, (ridx + offset) % limit);
         }
     } else {
         tbl->clone_column(index, "psp_pkey");
-        tbl->clone_column(index, "psp_okey");
+        //tbl->clone_column(index, "psp_okey");
     }
 
     return tbl;
@@ -1054,10 +1054,8 @@ EMSCRIPTEN_BINDINGS(perspective) {
         .constructor<t_schema, t_config>()
         .smart_ptr<std::shared_ptr<t_ctx0>>("shared_ptr<t_ctx0>")
         .function<t_index>("sidedness", &t_ctx0::sidedness)
-        .function<unsigned long>("get_row_count",
-            reinterpret_cast<unsigned long (t_ctx0::*)() const>(&t_ctx0::get_row_count))
-        .function<unsigned long>("get_column_count",
-            reinterpret_cast<unsigned long (t_ctx0::*)() const>(&t_ctx0::get_column_count))
+        .function<t_index>("get_row_count", &t_ctx0::get_row_count)
+        .function<t_index>("get_column_count", &t_ctx0::get_column_count)
         .function<t_tscalvec>("get_data", &t_ctx0::get_data)
         .function<t_stepdelta>("get_step_delta", &t_ctx0::get_step_delta)
         .function<t_cellupdvec>("get_cell_delta", &t_ctx0::get_cell_delta)
@@ -1086,14 +1084,15 @@ EMSCRIPTEN_BINDINGS(perspective) {
         .constructor<t_schema, t_config>()
         .smart_ptr<std::shared_ptr<t_ctx1>>("shared_ptr<t_ctx1>")
         .function<t_index>("sidedness", &t_ctx1::sidedness)
-        .function<unsigned long>("get_row_count",
-            reinterpret_cast<unsigned long (t_ctx1::*)() const>(&t_ctx1::get_row_count))
-        .function<unsigned long>("get_column_count",
-            reinterpret_cast<unsigned long (t_ctx1::*)() const>(&t_ctx1::get_column_count))
+        .function<t_index>("get_row_count", &t_ctx1::get_row_count)
+        .function<t_index>("get_column_count", &t_ctx1::get_column_count)
         .function<t_tscalvec>("get_data", &t_ctx1::get_data)
+        .function<t_uindex>("get_leaf_count", &t_ctx1::get_leaf_count)
+        .function<t_tscalvec>("get_leaf_data", &t_ctx1::get_leaf_data)
         .function<t_stepdelta>("get_step_delta", &t_ctx1::get_step_delta)
         .function<t_cellupdvec>("get_cell_delta", &t_ctx1::get_cell_delta)
         .function<void>("set_depth", &t_ctx1::set_depth)
+        .function<t_depth>("get_depth", &t_ctx1::get_depth)
         .function("open", select_overload<t_index(t_tvidx)>(&t_ctx1::open))
         .function("close", select_overload<t_index(t_tvidx)>(&t_ctx1::close))
         .function<t_depth>("get_trav_depth", &t_ctx1::get_trav_depth)
@@ -1120,15 +1119,15 @@ EMSCRIPTEN_BINDINGS(perspective) {
         .constructor<t_schema, t_config>()
         .smart_ptr<std::shared_ptr<t_ctx2>>("shared_ptr<t_ctx2>")
         .function<t_index>("sidedness", &t_ctx2::sidedness)
-        .function<unsigned long>("get_row_count",
-            reinterpret_cast<unsigned long (t_ctx2::*)() const>(
-                select_overload<t_index() const>(&t_ctx2::get_row_count)))
-        .function<unsigned long>("get_column_count",
-            reinterpret_cast<unsigned long (t_ctx2::*)() const>(&t_ctx2::get_column_count))
+        .function<t_index>("get_row_count", &t_ctx2::get_row_count)
+        .function<t_index>("get_column_count", &t_ctx2::get_column_count)
         .function<t_tscalvec>("get_data", &t_ctx2::get_data)
+        .function<t_uindex>("get_leaf_count", &t_ctx2::get_leaf_count)
+        .function<t_tscalvec>("get_leaf_data", &t_ctx2::get_leaf_data)
         .function<t_stepdelta>("get_step_delta", &t_ctx2::get_step_delta)
         //.function<t_cellupdvec>("get_cell_delta", &t_ctx2::get_cell_delta)
         .function<void>("set_depth", &t_ctx2::set_depth)
+        .function<t_depth>("get_depth", &t_ctx2::get_depth)
         .function("open", select_overload<t_index(t_header, t_tvidx)>(&t_ctx2::open))
         .function("close", select_overload<t_index(t_header, t_tvidx)>(&t_ctx2::close))
         .function<t_aggspecvec>("get_column_names", &t_ctx2::get_aggregates)

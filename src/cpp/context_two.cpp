@@ -547,6 +547,19 @@ t_ctx2::set_depth(t_header header, t_depth depth) {
     }
 }
 
+t_depth
+t_ctx2::get_depth(t_header header) const {
+    switch (header) {
+        case HEADER_ROW: {
+            return m_row_depth;
+        } break;
+        case HEADER_COLUMN: {
+            return m_column_depth;
+        } break;
+        default: { PSP_COMPLAIN_AND_ABORT("Invalid header"); } break;
+    }
+}
+
 t_tscalvec
 t_ctx2::get_pkeys(const t_uidxpvec& cells) const {
     t_tscalset all_pkeys;
@@ -708,6 +721,154 @@ t_ctx2::get_trees() {
         ++count;
     }
     return rval;
+}
+
+t_uindex
+t_ctx2::get_leaf_count(t_header header) const
+{
+    switch (header)
+    {
+        case HEADER_ROW:
+            return m_trees.back()->get_num_leaves(m_row_depth + 1);
+        case HEADER_COLUMN:
+            return m_trees.front()->get_num_leaves(m_column_depth + 1);
+        default:
+        {
+            PSP_COMPLAIN_AND_ABORT("Bad header passed in");
+            return 0;
+        }
+    }
+}
+
+t_tscalvec
+t_ctx2::get_leaf_data(t_uindex start_row,
+                      t_uindex end_row,
+                      t_uindex start_col,
+                      t_uindex end_col) const
+{
+    t_depth row_depth = m_row_depth + 1;
+    t_depth column_depth = m_column_depth + 1;
+    t_index nrows = end_row - start_row;
+    t_index stride = end_col - start_col;
+     t_tscalvec retval((nrows + 1) * stride);
+     t_index n_aggs = m_config.get_num_aggregates();
+     t_tscalvec r_path;
+    r_path.reserve(m_config.get_num_rpivots() +
+                   m_config.get_num_cpivots() + 1);
+     t_tscalar empty = t_tscalar::canonical(DTYPE_NONE);
+     t_index ridx = 0;
+    t_depth minus_one = -1;
+    t_depth last_depth = -1;
+     auto tree = m_trees[row_depth];
+     std::vector<t_tscalvec> col_paths(end_col);
+     static const char unit_sep = 0x1F;
+     t_idxvec cidxvec = m_trees[0]->get_indices_for_depth(column_depth);
+     for (t_uindex cidx = 0; cidx < end_col - row_depth; ++cidx)
+    {
+        t_index translated_idx = cidx / n_aggs;
+        t_ptidx c_ptidx = cidxvec[translated_idx];
+        col_paths[cidx].reserve(m_config.get_num_cpivots());
+        m_trees[0]->get_path(c_ptidx, col_paths[cidx]);
+         std::stringstream label;
+        t_tscalvec& plabels = col_paths[cidx];
+        if (!plabels.empty())
+        {
+            auto last = plabels.rend() - 1;
+            for (auto lit = plabels.rbegin(); lit != last; ++lit)
+            {
+                label << lit->to_string() << unit_sep;
+            }
+            label << last->to_string();
+        }
+        retval[cidx+row_depth].set(get_interned_tscalar(label.str().c_str()));
+    }
+     // Iterate by depth
+    std::deque<t_uindex> dft;
+    dft.push_front(0);
+     std::vector<t_tscalar> pheader;
+    while (!dft.empty())
+    {
+        auto nidx = dft.front();
+        dft.pop_front();
+         t_stnode node = tree->get_node(nidx);
+         if (node.m_depth < row_depth)
+        {
+            if (node.m_depth < last_depth && last_depth != minus_one)
+            {
+                for (t_uindex i = 0; i < last_depth - node.m_depth;
+                     ++i)
+                {
+                    pheader.pop_back();
+                }
+            }
+             if (node.m_depth != 0) {
+                pheader.push_back(node.m_value);
+            }
+             t_uidxvec nodes = tree->get_child_idx(nidx);
+            std::copy(nodes.rbegin(),
+                      nodes.rend(),
+                      std::front_inserter(dft));
+        }
+        else if (node.m_depth == row_depth)
+        {
+            ridx++;
+             t_uindex r_start = (ridx - start_row) * stride;
+            for (t_uindex hidx = 0; hidx < row_depth; ++hidx) {
+                retval[r_start + hidx].set(pheader[hidx]);
+            }
+            retval[r_start + row_depth - 1].set(node.m_value);
+             t_ptidx r_ptidx = node.m_idx;
+            tree->get_path(r_ptidx, r_path);
+            t_depth r_depth = node.m_depth;
+             for (t_uindex cidx = 0; cidx < end_col - row_depth; ++cidx)
+            {
+                t_index insert_idx =
+                    (ridx - start_row) * stride + row_depth + cidx;
+                const t_tscalvec& c_path = col_paths[cidx];
+                 t_index agg_idx = cidx % n_aggs;
+                t_ptidx query_ptidx = INVALID_INDEX;
+                 if (c_path.size() == 0)
+                {
+                    query_ptidx = r_ptidx;
+                }
+                else
+                {
+                    if (r_depth + 1 ==
+                        static_cast<t_depth>(m_trees.size()))
+                    {
+                        query_ptidx =
+                            tree->resolve_path(r_ptidx, c_path);
+                    }
+                    else
+                    {
+                        t_ptidx path_ptidx =
+                            tree->resolve_path(0, r_path);
+                        if (path_ptidx < 0)
+                        {
+                            query_ptidx = INVALID_INDEX;
+                        }
+                        else
+                        {
+                            query_ptidx = tree->resolve_path(
+                                path_ptidx, c_path);
+                        }
+                    }
+                }
+                 if (query_ptidx < 0)
+                {
+                    retval[insert_idx].set(empty);
+                }
+                else
+                {
+                    retval[insert_idx].set(
+                        tree->get_aggregate(query_ptidx, agg_idx));
+                }
+            }
+             r_path.clear();
+        }
+        last_depth = node.m_depth;
+    }
+    return retval;
 }
 
 t_bool

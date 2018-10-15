@@ -1821,6 +1821,40 @@ t_stree::has_deltas() const {
     return m_has_delta;
 }
 
+t_uindex
+t_stree::get_num_leaves(t_uindex depth) const
+{
+    t_uint8 d8(depth);
+    auto iterators = m_nodes->get<by_depth>().equal_range(d8);
+    return std::distance(iterators.first, iterators.second);
+}
+
+t_idxvec
+t_stree::get_indices_for_depth(t_uindex depth) const
+ {
+    t_idxvec indices;
+    std::deque<t_tnode> dft;
+    dft.push_front(get_node(0));
+     while (!dft.empty())
+    {
+        t_tnode node = dft.front();
+        dft.pop_front();
+         if (node.m_depth < depth)
+        {
+            t_stnode_vec nodes;
+            get_child_nodes(node.m_idx, nodes);
+            std::copy(nodes.rbegin(),
+                      nodes.rend(),
+                      std::front_inserter(dft));
+        }
+        else if (node.m_depth == depth)
+        {
+            indices.push_back(node.m_idx);
+        }
+    }
+    return indices;
+}
+
 void
 t_stree::get_sortby_path(t_uindex idx, t_tscalvec& rval) const {
     t_uindex curidx = idx;
