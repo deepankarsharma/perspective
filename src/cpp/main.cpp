@@ -785,8 +785,12 @@ make_gnode(t_table_sptr table)
 
     t_schema oscm(ocolnames, odt);
 
+    t_gnode_options options;
+    options.m_gnode_type = GNODE_TYPE_PKEYED;
+    options.m_port_schema = iscm;
+
     // Create a gnode
-    auto gnode = std::make_shared<t_gnode>(iscm);
+    auto gnode = std::make_shared<t_gnode>(options);
     gnode->init();
 
     return gnode;
@@ -1255,7 +1259,7 @@ EMSCRIPTEN_BINDINGS(perspective)
             "types", &t_schema::types, allow_raw_pointers());
 
     class_<t_gnode>("t_gnode")
-        .constructor<const t_schema&>()
+        .constructor<const t_gnode_options&>()
         .smart_ptr<std::shared_ptr<t_gnode>>("shared_ptr<t_gnode>")
         .function<t_uindex>("get_id",
             reinterpret_cast<t_uindex (t_gnode::*)() const>(&t_gnode::get_id))

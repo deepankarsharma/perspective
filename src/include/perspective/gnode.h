@@ -26,10 +26,17 @@
 namespace perspective
 {
 
+struct PERSPECTIVE_EXPORT t_gnode_options
+{
+    t_gnode_type m_gnode_type;
+    t_schema m_port_schema;
+};
+
 struct PERSPECTIVE_EXPORT t_gnode_recipe
 {
     t_gnode_recipe() {}
     t_gnode_processing_mode m_mode;
+    t_gnode_type m_gnode_type;
     t_schema_recipe m_tblschema;
     t_schema_recipevec m_ischemas;
     t_schema_recipevec m_oschemas;
@@ -58,9 +65,9 @@ typedef std::shared_ptr<t_ctx_grouped_pkey> t_ctx_grouped_pkey_sptr;
 class PERSPECTIVE_EXPORT t_gnode
 {
 public:
-    static t_gnode_sptr build(const t_schema& port_schema);
+    static t_gnode_sptr build(const t_gnode_options& options);
     t_gnode(const t_gnode_recipe& recipe);
-    t_gnode(const t_schema& port_schema);
+    t_gnode(const t_gnode_options& options);
     ~t_gnode();
     void init();
 
@@ -153,6 +160,7 @@ private:
     void populate_icols_in_flattened(
         const std::vector<t_rlookup>& lkup, t_table_sptr& flat) const;
 
+    t_gnode_type m_gnode_type;
     t_gnode_processing_mode m_mode;
     t_schema m_tblschema;
     t_schemavec m_ischemas;

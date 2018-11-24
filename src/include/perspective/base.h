@@ -281,6 +281,12 @@ enum t_value_transition
     VALUE_TRANSITION_NVEQ_FT
 };
 
+enum t_gnode_type
+{
+    GNODE_TYPE_PKEYED,     // Explicit user set pkey
+    GNODE_TYPE_IMPLICIT_PKEYED  // pkey is row based
+};
+
 enum t_gnode_port
 {
     PSP_PORT_FLATTENED,   // same schema as iport (pkey,op)
