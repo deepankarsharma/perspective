@@ -69,6 +69,20 @@ _get_sort(val j_sortby)
     return svec;
 }
 
+void
+_configure_sort_map(val j_sortmap, t_config& config) {
+    std::vector<t_str> sort;
+    std::vector<t_str> sort_by;
+
+    val j_keys = val::global("Object").call<val>("keys", j_sortmap);
+    std::vector<t_str> keys = vecFromJSArray<t_str>(j_keys);
+    for (auto idx = 0; idx < keys.size(); ++idx) {
+        sort.push_back(keys[idx]);
+        sort_by.push_back(j_sortmap[keys[idx]].as<t_str>());
+    }
+    config.setup(std::vector<t_str>{}, sort, sort_by);
+}
+
 /**
  *
  *
@@ -225,7 +239,7 @@ void
 vecFromTypedArray(const val& typedArray, void* data, t_int32 length,
     const char* destType = nullptr)
 {
-    val memory = val::module_property("buffer");
+    val memory = val::module_property("HEAP8")["buffer"];
     if (destType == nullptr)
     {
         val memoryView = typedArray["constructor"].new_(
@@ -408,9 +422,9 @@ _fill_col<t_time>(val dcol, t_col_sptr col, t_bool is_arrow)
 t_date
 jsdate_to_t_date(val date)
 {
-    return t_date(date.call<val>("getFullYear").as<t_int32>(),
-        date.call<val>("getMonth").as<t_int32>(),
-        date.call<val>("getDate").as<t_int32>());
+    return t_date(date.call<val>("getUTCFullYear").as<t_int32>(),
+        date.call<val>("getUTCMonth").as<t_int32>(),
+        date.call<val>("getUTCDate").as<t_int32>());
 }
 
 val
@@ -521,7 +535,8 @@ _fill_col<std::string>(val dcol, t_col_sptr col, t_bool is_arrow)
 
     if (is_arrow)
     {
-        if (dcol["constructor"]["name"].as<t_str>() == "DictionaryVector")
+	t_str vecname = dcol["VectorName"].as<t_str>();
+        if (vecname == "DictionaryVector")
         {
 
             val dictvec = dcol["dictionary"];
@@ -536,8 +551,7 @@ _fill_col<std::string>(val dcol, t_col_sptr col, t_bool is_arrow)
             arrow::vecFromTypedArray(
                 vkeys, col->get_nth<t_uindex>(0), nrows, "Uint32Array");
         }
-        else if (dcol["constructor"]["name"].as<t_str>() == "Utf8Vector"
-            || dcol["constructor"]["name"].as<t_str>() == "BinaryVector")
+        else if (vecname == "Utf8Vector" || vecname == "BinaryVector")
         {
 
             val vdata = dcol["values"];
@@ -831,7 +845,7 @@ make_context_zero(t_schema schema, t_filter_op combiner, val j_filters,
  */
 t_ctx1_sptr
 make_context_one(t_schema schema, val j_pivots, t_filter_op combiner,
-    val j_filters, val j_aggs, val j_sortby)
+    val j_filters, val j_aggs, val j_sortby, val j_sortmap)
 {
     auto fvec = _get_fterms(schema, j_filters);
     auto aggspecs = _get_aggspecs(j_aggs);
@@ -839,6 +853,7 @@ make_context_one(t_schema schema, val j_pivots, t_filter_op combiner,
     auto svec = _get_sort(j_sortby);
 
     auto cfg = t_config(pivots, aggspecs, combiner, fvec);
+    _configure_sort_map(j_sortmap, cfg);
     auto ctx1 = std::make_shared<t_ctx1>(schema, cfg);
 
     ctx1->init();
@@ -860,7 +875,8 @@ make_context_one(t_schema schema, val j_pivots, t_filter_op combiner,
  */
 t_ctx2_sptr
 make_context_two(t_schema schema, val j_rpivots, val j_cpivots,
-    t_filter_op combiner, val j_filters, val j_aggs, val j_sortby)
+    t_filter_op combiner, val j_filters, val j_aggs, val j_sortby,
+    val j_sortmap)
 {
     auto fvec = _get_fterms(schema, j_filters);
     auto aggspecs = _get_aggspecs(j_aggs);
@@ -870,6 +886,7 @@ make_context_two(t_schema schema, val j_rpivots, val j_cpivots,
 
     auto cfg
         = t_config(rpivots, cpivots, aggspecs, TOTALS_HIDDEN, combiner, fvec);
+    _configure_sort_map(j_sortmap, cfg);
     auto ctx2 = std::make_shared<t_ctx2>(schema, cfg);
 
     ctx2->init();
@@ -1222,189 +1239,188 @@ EMSCRIPTEN_BINDINGS(perspective)
 {
     class_<t_column>("t_column")
         .smart_ptr<std::shared_ptr<t_column>>("shared_ptr<t_column>")
-        .function<void>("set_scalar", &t_column::set_scalar);
+        .function("set_scalar", &t_column::set_scalar);
 
     class_<t_table>("t_table")
         .constructor<t_schema, t_uindex>()
         .smart_ptr<std::shared_ptr<t_table>>("shared_ptr<t_table>")
-        .function<void>("pprint", &t_table::pprint)
-        .function<unsigned long>("size",
+        .function("pprint", select_overload<void()const>(&t_table::pprint))
+        .function("size",
             reinterpret_cast<unsigned long (t_table::*)() const>(
                 &t_table::size));
 
     class_<t_schema>("t_schema")
-        .function<const std::vector<t_str>&>(
+        .function(
             "columns", &t_schema::columns, allow_raw_pointers())
-        .function<const std::vector<t_dtype>>(
+        .function(
             "types", &t_schema::types, allow_raw_pointers());
 
     class_<t_gnode>("t_gnode")
         .constructor<const t_gnode_options&>()
         .smart_ptr<std::shared_ptr<t_gnode>>("shared_ptr<t_gnode>")
-        .function<t_uindex>("get_id",
+        .function("get_id",
             reinterpret_cast<t_uindex (t_gnode::*)() const>(&t_gnode::get_id))
-        .function<t_schema>("get_tblschema", &t_gnode::get_tblschema)
-        .function<t_table*>(
-            "get_table", &t_gnode::get_table, allow_raw_pointers());
+        .function("get_tblschema", &t_gnode::get_tblschema)
+        .function("get_table", select_const(&t_gnode::get_table), allow_raw_pointers());
 
     class_<t_ctx0>("t_ctx0")
         .constructor<t_schema, t_config>()
         .smart_ptr<std::shared_ptr<t_ctx0>>("shared_ptr<t_ctx0>")
-        .function<t_index>("sidedness", &t_ctx0::sidedness)
-        .function<t_index>("get_row_count", &t_ctx0::get_row_count)
-        .function<t_index>("get_column_count", &t_ctx0::get_column_count)
-        .function<t_tscalvec>("get_data", &t_ctx0::get_data)
-        .function<t_stepdelta>("get_step_delta", &t_ctx0::get_step_delta)
-        .function<t_cellupdvec>("get_cell_delta", &t_ctx0::get_cell_delta)
-        .function<std::vector<t_str>>(
+        .function("sidedness", &t_ctx0::sidedness)
+        .function("get_row_count", &t_ctx0::get_row_count)
+        .function("get_column_count", &t_ctx0::get_column_count)
+        .function("get_data", &t_ctx0::get_data)
+        .function("get_step_delta", &t_ctx0::get_step_delta)
+        .function("get_cell_delta", &t_ctx0::get_cell_delta)
+        .function(
             "get_column_names", &t_ctx0::get_column_names)
-        .function<t_dtype>("get_column_dtype", &t_ctx0::get_column_dtype)
-        // .function<t_minmaxvec>("get_min_max", &t_ctx0::get_min_max)
-        // .function<void>("set_minmax_enabled", &t_ctx0::set_minmax_enabled)
-        .function<t_tscalvec>("unity_get_row_data", &t_ctx0::unity_get_row_data)
-        .function<t_tscalvec>(
+        .function("get_column_dtype", &t_ctx0::get_column_dtype)
+        // .function("get_min_max", &t_ctx0::get_min_max)
+        // .function("set_minmax_enabled", &t_ctx0::set_minmax_enabled)
+        .function("unity_get_row_data", &t_ctx0::unity_get_row_data)
+        .function(
             "unity_get_column_data", &t_ctx0::unity_get_column_data)
-        .function<t_tscalvec>("unity_get_row_path", &t_ctx0::unity_get_row_path)
-        .function<t_tscalvec>(
+        .function("unity_get_row_path", &t_ctx0::unity_get_row_path)
+        .function(
             "unity_get_column_path", &t_ctx0::unity_get_column_path)
-        .function<t_uindex>("unity_get_row_depth", &t_ctx0::unity_get_row_depth)
-        .function<t_uindex>(
+        .function("unity_get_row_depth", &t_ctx0::unity_get_row_depth)
+        .function(
             "unity_get_column_depth", &t_ctx0::unity_get_column_depth)
-        .function<t_str>(
+        .function(
             "unity_get_column_name", &t_ctx0::unity_get_column_name)
-        .function<t_str>("unity_get_column_display_name",
+        .function("unity_get_column_display_name",
             &t_ctx0::unity_get_column_display_name)
-        .function<std::vector<t_str>>(
+        .function(
             "unity_get_column_names", &t_ctx0::unity_get_column_names)
-        .function<std::vector<t_str>>("unity_get_column_display_names",
+        .function("unity_get_column_display_names",
             &t_ctx0::unity_get_column_display_names)
-        .function<t_uindex>(
+        .function(
             "unity_get_column_count", &t_ctx0::unity_get_column_count)
-        .function<t_uindex>("unity_get_row_count", &t_ctx0::unity_get_row_count)
-        .function<t_bool>(
+        .function("unity_get_row_count", &t_ctx0::unity_get_row_count)
+        .function(
             "unity_get_row_expanded", &t_ctx0::unity_get_row_expanded)
-        .function<t_bool>(
+        .function(
             "unity_get_column_expanded", &t_ctx0::unity_get_column_expanded)
-        .function<void>(
+        .function(
             "unity_init_load_step_end", &t_ctx0::unity_init_load_step_end);
 
     class_<t_ctx1>("t_ctx1")
         .constructor<t_schema, t_config>()
         .smart_ptr<std::shared_ptr<t_ctx1>>("shared_ptr<t_ctx1>")
-        .function<t_index>("sidedness", &t_ctx1::sidedness)
-        .function<t_index>("get_row_count", &t_ctx1::get_row_count)
-        .function<t_index>("get_column_count", &t_ctx1::get_column_count)
-        .function<t_tscalvec>("get_data", &t_ctx1::get_data)
-        .function<t_uindex>("get_leaf_count", &t_ctx1::get_leaf_count)
-        .function<t_tscalvec>("get_leaf_data", &t_ctx1::get_leaf_data)
-        .function<t_stepdelta>("get_step_delta", &t_ctx1::get_step_delta)
-        .function<t_cellupdvec>("get_cell_delta", &t_ctx1::get_cell_delta)
-        .function<void>("set_depth", &t_ctx1::set_depth)
-        .function<t_depth>("get_depth", &t_ctx1::get_depth)
+        .function("sidedness", &t_ctx1::sidedness)
+        .function("get_row_count", &t_ctx1::get_row_count)
+        .function("get_column_count", &t_ctx1::get_column_count)
+        .function("get_data", &t_ctx1::get_data)
+        .function("get_leaf_count", &t_ctx1::get_leaf_count)
+        .function("get_leaf_data", &t_ctx1::get_leaf_data)
+        .function("get_step_delta", &t_ctx1::get_step_delta)
+        .function("get_cell_delta", &t_ctx1::get_cell_delta)
+        .function("set_depth", &t_ctx1::set_depth)
+        .function("get_depth", &t_ctx1::get_depth)
         .function("open", select_overload<t_index(t_tvidx)>(&t_ctx1::open))
         .function("close", select_overload<t_index(t_tvidx)>(&t_ctx1::close))
-        .function<t_depth>("get_trav_depth", &t_ctx1::get_trav_depth)
-        .function<t_aggspecvec>("get_column_names", &t_ctx1::get_aggregates)
-        .function<t_dtype>("get_column_dtype", &t_ctx1::get_column_dtype)
-        .function<t_tscalvec>("unity_get_row_data", &t_ctx1::unity_get_row_data)
-        .function<t_tscalvec>(
+        .function("get_trav_depth", &t_ctx1::get_trav_depth)
+        .function("get_column_names", &t_ctx1::get_aggregates)
+        .function("get_column_dtype", &t_ctx1::get_column_dtype)
+        .function("unity_get_row_data", &t_ctx1::unity_get_row_data)
+        .function(
             "unity_get_column_data", &t_ctx1::unity_get_column_data)
-        .function<t_tscalvec>("unity_get_row_path", &t_ctx1::unity_get_row_path)
-        .function<t_tscalvec>(
+        .function("unity_get_row_path", &t_ctx1::unity_get_row_path)
+        .function(
             "unity_get_column_path", &t_ctx1::unity_get_column_path)
-        .function<t_uindex>("unity_get_row_depth", &t_ctx1::unity_get_row_depth)
-        .function<t_uindex>(
+        .function("unity_get_row_depth", &t_ctx1::unity_get_row_depth)
+        .function(
             "unity_get_column_depth", &t_ctx1::unity_get_column_depth)
-        .function<t_str>(
+        .function(
             "unity_get_column_name", &t_ctx1::unity_get_column_name)
-        .function<t_str>("unity_get_column_display_name",
+        .function("unity_get_column_display_name",
             &t_ctx1::unity_get_column_display_name)
-        .function<std::vector<t_str>>(
+        .function(
             "unity_get_column_names", &t_ctx1::unity_get_column_names)
-        .function<std::vector<t_str>>("unity_get_column_display_names",
+        .function("unity_get_column_display_names",
             &t_ctx1::unity_get_column_display_names)
-        .function<t_uindex>(
+        .function(
             "unity_get_column_count", &t_ctx1::unity_get_column_count)
-        .function<t_uindex>("unity_get_row_count", &t_ctx1::unity_get_row_count)
-        .function<t_bool>(
+        .function("unity_get_row_count", &t_ctx1::unity_get_row_count)
+        .function(
             "unity_get_row_expanded", &t_ctx1::unity_get_row_expanded)
-        .function<t_bool>(
+        .function(
             "unity_get_column_expanded", &t_ctx1::unity_get_column_expanded)
-        .function<void>(
+        .function(
             "unity_init_load_step_end", &t_ctx1::unity_init_load_step_end);
 
     class_<t_ctx2>("t_ctx2")
         .constructor<t_schema, t_config>()
         .smart_ptr<std::shared_ptr<t_ctx2>>("shared_ptr<t_ctx2>")
-        .function<t_index>("sidedness", &t_ctx2::sidedness)
-        .function<t_index>("get_row_count", &t_ctx2::get_row_count)
-        .function<t_index>("get_column_count", &t_ctx2::get_column_count)
-        .function<t_tscalvec>("get_data", &t_ctx2::get_data)
-        .function<t_uindex>("get_leaf_count", &t_ctx2::get_leaf_count)
-        .function<t_tscalvec>("get_leaf_data", &t_ctx2::get_leaf_data)
-        .function<t_stepdelta>("get_step_delta", &t_ctx2::get_step_delta)
-        //.function<t_cellupdvec>("get_cell_delta", &t_ctx2::get_cell_delta)
-        .function<void>("set_depth", &t_ctx2::set_depth)
-        .function<t_depth>("get_depth", &t_ctx2::get_depth)
+        .function("sidedness", &t_ctx2::sidedness)
+        .function("get_row_count", &t_ctx2::get_row_count)
+        .function("get_column_count", &t_ctx2::get_column_count)
+        .function("get_data", &t_ctx2::get_data)
+        .function("get_leaf_count", &t_ctx2::get_leaf_count)
+        .function("get_leaf_data", &t_ctx2::get_leaf_data)
+        .function("get_step_delta", &t_ctx2::get_step_delta)
+        //.function("get_cell_delta", &t_ctx2::get_cell_delta)
+        .function("set_depth", &t_ctx2::set_depth)
+        .function("get_depth", &t_ctx2::get_depth)
         .function(
             "open", select_overload<t_index(t_header, t_tvidx)>(&t_ctx2::open))
         .function("close",
             select_overload<t_index(t_header, t_tvidx)>(&t_ctx2::close))
-        .function<t_aggspecvec>("get_column_names", &t_ctx2::get_aggregates)
-        .function<t_dtype>("get_column_dtype", &t_ctx2::get_column_dtype)
-        .function<t_tscalvec>("unity_get_row_data", &t_ctx2::unity_get_row_data)
-        .function<t_tscalvec>(
+        .function("get_column_names", &t_ctx2::get_aggregates)
+        .function("get_column_dtype", &t_ctx2::get_column_dtype)
+        .function("unity_get_row_data", &t_ctx2::unity_get_row_data)
+        .function(
             "unity_get_column_data", &t_ctx2::unity_get_column_data)
-        .function<t_tscalvec>("unity_get_row_path", &t_ctx2::unity_get_row_path)
-        .function<t_tscalvec>(
+        .function("unity_get_row_path", &t_ctx2::unity_get_row_path)
+        .function(
             "unity_get_column_path", &t_ctx2::unity_get_column_path)
-        .function<t_uindex>("unity_get_row_depth", &t_ctx2::unity_get_row_depth)
-        .function<t_uindex>(
+        .function("unity_get_row_depth", &t_ctx2::unity_get_row_depth)
+        .function(
             "unity_get_column_depth", &t_ctx2::unity_get_column_depth)
-        .function<t_str>(
+        .function(
             "unity_get_column_name", &t_ctx2::unity_get_column_name)
-        .function<t_str>("unity_get_column_display_name",
+        .function("unity_get_column_display_name",
             &t_ctx2::unity_get_column_display_name)
-        .function<std::vector<t_str>>(
+        .function(
             "unity_get_column_names", &t_ctx2::unity_get_column_names)
-        .function<std::vector<t_str>>("unity_get_column_display_names",
+        .function("unity_get_column_display_names",
             &t_ctx2::unity_get_column_display_names)
-        .function<t_uindex>(
+        .function(
             "unity_get_column_count", &t_ctx2::unity_get_column_count)
-        .function<t_uindex>("unity_get_row_count", &t_ctx2::unity_get_row_count)
-        .function<t_bool>(
+        .function("unity_get_row_count", &t_ctx2::unity_get_row_count)
+        .function(
             "unity_get_row_expanded", &t_ctx2::unity_get_row_expanded)
-        .function<t_bool>(
+        .function(
             "unity_get_column_expanded", &t_ctx2::unity_get_column_expanded)
-        .function<void>(
+        .function(
             "unity_init_load_step_end", &t_ctx2::unity_init_load_step_end)
-        .function<t_totals>("get_totals", &t_ctx2::get_totals)
-        .function<t_tscalvec>(
+        .function("get_totals", &t_ctx2::get_totals)
+        .function(
             "get_column_path_userspace", &t_ctx2::get_column_path_userspace)
-        .function<void>(
+        .function(
             "unity_init_load_step_end", &t_ctx2::unity_init_load_step_end);
 
     class_<t_pool>("t_pool")
         .constructor<emscripten::val>()
         .smart_ptr<std::shared_ptr<t_pool>>("shared_ptr<t_pool>")
-        .function<unsigned int>(
+        .function(
             "register_gnode", &t_pool::register_gnode, allow_raw_pointers())
-        .function<void>("process", &t_pool::_process)
-        .function<void>("send", &t_pool::send)
-        .function<t_uindex>("epoch", &t_pool::epoch)
-        .function<void>("unregister_gnode", &t_pool::unregister_gnode)
-        .function<void>("set_update_delegate", &t_pool::set_update_delegate)
-        .function<void>("register_context", &t_pool::register_context)
-        .function<void>("unregister_context", &t_pool::unregister_context)
-        .function<t_updctx_vec>(
+        .function("process", &t_pool::_process)
+        .function("send", &t_pool::send)
+        .function("epoch", &t_pool::epoch)
+        .function("unregister_gnode", &t_pool::unregister_gnode)
+        .function("set_update_delegate", &t_pool::set_update_delegate)
+        .function("register_context", &t_pool::register_context)
+        .function("unregister_context", &t_pool::unregister_context)
+        .function(
             "get_contexts_last_updated", &t_pool::get_contexts_last_updated)
-        .function<std::vector<t_uindex>>(
+        .function(
             "get_gnodes_last_updated", &t_pool::get_gnodes_last_updated)
-        .function<t_gnode*>(
+        .function(
             "get_gnode", &t_pool::get_gnode, allow_raw_pointers());
 
     class_<t_aggspec>("t_aggspec")
-        .function<std::string>("name", &t_aggspec::name);
+        .function("name", &t_aggspec::name);
 
     class_<t_tscalar>("t_tscalar");
 
